@@ -25,6 +25,7 @@ dependencies {
     annotationProcessor 'org.projectlombok:lombok:1.18.30'
 
     implementation 'org.mindrot:jbcrypt:0.4'
+implementation 'org.apache.commons:commons-lang3:3.14.0'
 }
 
 group = 'huper.digital'
