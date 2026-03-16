@@ -1,8 +1,8 @@
 package huper.digital.iam.security;
 
-import huper.digital.iam.entity.AuthRefreshTokenEntity;
-import huper.digital.iam.entity.AuthUserEntity;
-import huper.digital.iam.repository.AuthRefreshTokenRepository;
+import huper.digital.iam.user.entity.RefreshTokenEntity;
+import huper.digital.iam.user.entity.UserEntity;
+import huper.digital.iam.user.repository.RefreshTokenRepository;
 import io.smallrye.jwt.build.Jwt;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -12,8 +12,8 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.List;
 import java.util.Base64;
+import java.util.List;
 import java.util.Set;
 
 @ApplicationScoped
@@ -35,9 +35,7 @@ public class JwtTokenService {
   }
 
   public boolean matchesPassword(String rawPassword, String passwordHash) {
-    if (rawPassword == null || passwordHash == null) {
-      return false;
-    }
+    if (rawPassword == null || passwordHash == null) return false;
     return BCrypt.checkpw(rawPassword, passwordHash);
   }
 
@@ -45,33 +43,23 @@ public class JwtTokenService {
     return BCrypt.hashpw(rawPassword, BCrypt.gensalt());
   }
 
-  public String generateAccessToken(AuthUserEntity user, Set<String> roleNames) {
+  public String generateAccessToken(UserEntity user, Set<String> roleNames) {
     Instant now = Instant.now();
     Instant expiresAt = now.plusSeconds(accessTokenTtlSeconds);
-
-    List<String> organizationIds = user.getOrganizationMemberships() == null
-        ? List.of()
+    List<String> organizationIds = user.getOrganizationMemberships() == null ? List.of()
         : user.getOrganizationMemberships().stream()
         .filter(m -> m != null && m.getOrganization() != null)
-        .map(m -> m.getOrganization().getId())
-        .map(String::valueOf)
+        .map(m -> m.getOrganization().getId().toString())
         .distinct()
         .toList();
-
-    List<String> ownerOrganizationIds = user.getOrganizationMemberships() == null
-        ? List.of()
+    List<String> ownerOrganizationIds = user.getOrganizationMemberships() == null ? List.of()
         : user.getOrganizationMemberships().stream()
         .filter(m -> m != null && Boolean.TRUE.equals(m.getOwner()) && m.getOrganization() != null)
-        .map(m -> m.getOrganization().getId())
-        .map(String::valueOf)
+        .map(m -> m.getOrganization().getId().toString())
         .distinct()
         .toList();
-
-    // Backward-compat: keep a single organizationId claim when possible
-    String organizationId = !ownerOrganizationIds.isEmpty()
-        ? ownerOrganizationIds.getFirst()
+    String organizationId = !ownerOrganizationIds.isEmpty() ? ownerOrganizationIds.getFirst()
         : (organizationIds.isEmpty() ? null : organizationIds.getFirst());
-
     return Jwt.issuer(issuer)
         .upn(user.getEmail())
         .subject(user.getId().toString())
@@ -79,25 +67,22 @@ public class JwtTokenService {
         .expiresAt(expiresAt)
         .groups(roleNames == null ? Set.of() : roleNames)
         .claim("userId", user.getId().toString())
-        .claim("organizationId", "organizationId")
+        .claim("organizationId", organizationId)
         .claim("organizationIds", organizationIds)
         .claim("ownerOrganizationIds", ownerOrganizationIds)
         .sign();
   }
 
-  public String createAndPersistRefreshToken(AuthUserEntity user, AuthRefreshTokenRepository repository) {
+  public String createAndPersistRefreshToken(UserEntity user, RefreshTokenRepository repository) {
     byte[] bytes = new byte[32];
     SECURE_RANDOM.nextBytes(bytes);
     String token = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-
-    AuthRefreshTokenEntity entity = new AuthRefreshTokenEntity();
+    RefreshTokenEntity entity = new RefreshTokenEntity();
     entity.setUser(user);
     entity.setToken(token);
     entity.setExpiresAt(LocalDateTime.ofInstant(Instant.now().plusSeconds(refreshTokenTtlSeconds), ZoneOffset.UTC));
     entity.setRevoked(false);
-
     repository.persist(entity);
     return token;
   }
 }
-
